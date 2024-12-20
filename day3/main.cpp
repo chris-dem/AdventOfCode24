@@ -26,12 +26,9 @@ std::string read_file(bool debug) {
 }
 
 int solution(std::string inp) {
-    std::regex re("(mul\([0-9]{1,3}, [0-9]{1,3})\)");
-    auto iter = std::sregex_iterator(inp.begin(), inp.end(), re);
-    for (std::sregex_iterator i = iter; i != std::sregex_iterator(); ++i) {
-        std::smatch match = *i;
-        std::cout << match[1] << std::endl;
-    }
+    std::regex mul_experssion("mul\\([0-9]{1,3}, [0-9]{1,3}\\)");
+    auto iter = std::sregex_iterator(inp.begin(), inp.end(), mul_experssion);
+    std::cout << std::distance(iter, std::sregex_iterator()) << std::endl;
     return 0;
 }
 
