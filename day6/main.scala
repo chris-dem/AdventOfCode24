@@ -1,5 +1,6 @@
 import scala.io.Source
 import scala.collection.immutable.TreeSet
+import scala.compiletime.ops.boolean
 
 type Wall = Unit
 type Grid = Vector[CellType]
@@ -177,9 +178,10 @@ def loop(grid: GridStruct)(
     }
 
 class Line(val pointA: MapIndex, val pointB: MapIndex) {
+    def |=|(other: Line): Boolean =
+        (isHorizontal == other.isHorizontal) && (pointA.x == other.pointA.x || pointA.y == other.pointA.y)
     def <>(other: Line): Option[Line] =
-        val checks =
-            (isHorizontal == other.isHorizontal) && (pointA.x == other.pointA.x || pointA.y == other.pointA.y)
+        val checks = this |=| other
         if (!checks)
             None
         else if (isHorizontal)
