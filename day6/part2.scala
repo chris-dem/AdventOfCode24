@@ -1,4 +1,4 @@
-package partA
+package partB
 
 import scala.io.Source
 import scala.collection.immutable.TreeSet
@@ -178,7 +178,7 @@ def loop(grid: GridStruct)(
         case None      => (MapDims.getLim(indx, dir) :: seq).reverse
     }
 
-class Line(val pointA: MapIndex, val pointB: MapIndex) {
+case class Line(pointA: MapIndex, pointB: MapIndex, dir: Direction) {
     def |=|(other: Line): Boolean =
         (isHorizontal == other.isHorizontal) && (pointA.x == other.pointA.x || pointA.y == other.pointA.y)
 
@@ -191,32 +191,13 @@ class Line(val pointA: MapIndex, val pointB: MapIndex) {
             (this.pointA.x <= other.pointA.x && other.pointA.x <= this.pointB.x ||
                 other.pointA.x <= this.pointA.x && other.pointA.x <= other.pointB.x)
         (this |=| other) && (sameLine || sameCol)
+
     def toPoints: Iterator[MapIndex] =
         if isHorizontal then
             (pointA.y to pointB.y).map(MapIndex(pointA.x, _)).toIterator
         else (pointA.x to pointB.x).map(MapIndex(_, pointA.y)).toIterator
 
-    def <>(other: Line): Option[Line] =
-        val checks = this <=> other
-        if (!checks)
-            None
-        else if (isHorizontal)
-            Some(
-              Line(
-                MapIndex(pointA.x, pointA.y.min(other.pointA.y)),
-                MapIndex(pointA.x, pointB.y.max(other.pointB.y))
-              )
-            )
-        else
-            Some(
-              Line(
-                MapIndex(pointA.x.min(other.pointA.x), pointA.y),
-                MapIndex(pointB.x.max(other.pointB.x), pointA.y)
-              )
-            )
-
-    def isHorizontal = pointA.x == pointB.x
-    override def toString(): String = s"Line($pointA -> $pointB)"
+    def isHorizontal = dir == Direction.Right || dir == Direction.Left
 }
 
 object Line {
@@ -225,20 +206,24 @@ object Line {
             None
         } else {
             Some(if (x.x == y.x) {
+                val dir = if x.y <= y.y then Direction.Left else Direction.Right
                 Line(
                   pointA = MapIndex(x.x, x.y.min(y.y)),
-                  pointB = MapIndex(x.x, x.y.max(y.y))
+                  pointB = MapIndex(x.x, x.y.max(y.y)),
+                  dir
                 )
             } else {
+                val dir = if x.x <= y.x then Direction.Up else Direction.Down
                 Line(
                   pointA = MapIndex(x.x.min(y.x), y.y),
-                  pointB = MapIndex(x.x.max(y.x), y.y)
+                  pointB = MapIndex(x.x.max(y.x), y.y),
+                  dir
                 )
             })
         }
 }
 
-def part1(ins: Instance): Unit =
+def part2(ins: Instance): Unit =
     var currentPosition: Option[MapIndex] = Some(ins.player)
     val result = loop(ins.map)(ins.player, ins.dir).toList
     var lines =
@@ -261,4 +246,4 @@ def part1(ins: Instance): Unit =
 
 @main def main(fileName: String) =
     val ins = readFile(fileName)
-    part1(ins)
+    part2(ins)
