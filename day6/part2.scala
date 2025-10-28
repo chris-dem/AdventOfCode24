@@ -3,6 +3,7 @@ package partB
 import scala.io.Source
 import scala.collection.immutable.TreeSet
 import scala.compiletime.ops.boolean
+import scala.annotation.tailrec
 
 type Wall = Unit
 type Grid = Vector[CellType]
@@ -182,22 +183,27 @@ case class Line(pointA: MapIndex, pointB: MapIndex, dir: Direction) {
     def |=|(other: Line): Boolean =
         (isHorizontal == other.isHorizontal) && (pointA.x == other.pointA.x || pointA.y == other.pointA.y)
 
-    def -|-(other: Line): Boolean = isHorizontal && other.isHorizontal
-    def <=>(other: Line): Boolean =
-        val sameLine =
-            (this -|- other && (this.pointA.y <= other.pointA.y && other.pointA.y <= this.pointB.y ||
-                other.pointA.y <= this.pointA.y && other.pointA.y <= other.pointB.y))
-        val sameCol =
-            (this.pointA.x <= other.pointA.x && other.pointA.x <= this.pointB.x ||
-                other.pointA.x <= this.pointA.x && other.pointA.x <= other.pointB.x)
-        (this |=| other) && (sameLine || sameCol)
-
     def toPoints: Iterator[MapIndex] =
         if isHorizontal then
             (pointA.y to pointB.y).map(MapIndex(pointA.x, _)).toIterator
         else (pointA.x to pointB.x).map(MapIndex(_, pointA.y)).toIterator
 
     def isHorizontal = dir == Direction.Right || dir == Direction.Left
+    def <&>(other: Line): Boolean =
+        if (dir.turn != other.dir) {
+            return false
+        }
+        dir match {
+            case Direction.Up =>
+                (pointA.y >= other.pointA.y) && pointA.x <= other.pointA.x && other.pointA.x <= pointB.x
+            case Direction.Down =>
+                (pointA.y <= other.pointA.y) && pointA.x <= other.pointA.x && other.pointA.x <= pointB.x
+            case Direction.Left =>
+                (pointA.x <= other.pointA.x) && pointA.x <= other.pointA.x && other.pointA.x <= pointB.x
+            case Direction.Right => ???
+        }
+        ???
+
 }
 
 object Line {
@@ -223,6 +229,13 @@ object Line {
         }
 }
 
+@tailrec
+def addElems(lines: List[Line], count: Int = 0): Int =
+    lines match
+        case Nil => count
+        case head :: next =>
+            addElems(next, count + next.filter(head <&> _).length)
+
 def part2(ins: Instance): Unit =
     var currentPosition: Option[MapIndex] = Some(ins.player)
     val result = loop(ins.map)(ins.player, ins.dir).toList
@@ -238,12 +251,15 @@ def part2(ins: Instance): Unit =
                 }
             )
             .get
-    val res = lines
-        .flatMap(_.toPoints)
-        .to(TreeSet)
 
     println(res.size)
 
 @main def main(fileName: String) =
     val ins = readFile(fileName)
     part2(ins)
+
+/* Reachable lines
+1. Must admit the <&> case
+2. No # in between the lines
+2. No other line in between the line
+ */
