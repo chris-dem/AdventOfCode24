@@ -3,7 +3,10 @@ package partB
 import scala.io.Source
 import scala.collection.immutable.TreeSet
 import scala.compiletime.ops.boolean
+import scala.collection.Searching._
 import scala.annotation.tailrec
+import java.beans.Introspector
+import java.time.Year
 
 type Wall = Unit
 type Grid = Vector[CellType]
@@ -92,6 +95,29 @@ class GridStruct(
     val rowMap: Vector[TreeSet[Int]],
     val colMap: Vector[TreeSet[Int]]
 ) {
+    def getClosest(indx: MapIndex, direction: Direction): Option[Int] =
+        direction match {
+            case Direction.Up =>
+                colMap(indx.y)
+                    .from(indx.x)
+                    .headOption
+                    .map(_ - 1)
+            case Direction.Down =>
+                colMap(indx.y)
+                    .to(indx.x)
+                    .lastOption
+                    .map(_ + 1)
+            case Direction.Right =>
+                rowMap(indx.x)
+                    .to(indx.y)
+                    .lastOption
+                    .map(_ + 1)
+            case Direction.Left =>
+                rowMap(indx.x)
+                    .from(indx.y)
+                    .headOption
+                    .map(_ - 1)
+        }
     def findNext(indx: MapIndex, direction: Direction): Option[MapIndex] =
         direction match {
             case Direction.Up =>
@@ -199,10 +225,10 @@ case class Line(pointA: MapIndex, pointB: MapIndex, dir: Direction) {
             case Direction.Down =>
                 (pointA.y <= other.pointA.y) && pointA.x <= other.pointA.x && other.pointA.x <= pointB.x
             case Direction.Left =>
-                (pointA.x <= other.pointA.x) && pointA.x <= other.pointA.x && other.pointA.x <= pointB.x
-            case Direction.Right => ???
+                (pointA.x <= other.pointA.x) && pointA.y <= other.pointA.y && other.pointA.y <= pointB.y
+            case Direction.Right =>
+                (pointA.x >= other.pointA.x) && pointA.y <= other.pointA.y && other.pointA.y <= pointB.y
         }
-        ???
 
 }
 
@@ -229,12 +255,293 @@ object Line {
         }
 }
 
+case class Interval(val fst: Int, val snd: Int)
+object Interval {
+    implicit val ord: Ordering[Interval] = new Ordering[Interval] {
+        def compare(x: Interval, y: Interval): Int =
+            (x, y) match {
+                case (Interval(_, a), Interval(b, _)) if a < b            => -1
+                case (Interval(b, _), Interval(_, a)) if a < b            => 1
+                case (Interval(a, b), Interval(c, d)) if a <= c && d <= b => 0
+                case (Interval(a, b), Interval(c, d)) if c <= a && b <= d => 0
+                case _                                                    => ???
+            }
+    }
+}
+
+case class IntervalVec(val vec: Vector[Interval]) {
+    override def toString(): String = s"[${vec.mkString(", ")}]"
+    private def binIns(p: Interval) =
+        vec.search(p)
+            .match
+                case Found(_) => {
+                    println(List(vec, p))
+                    ???
+                }
+                case InsertionPoint(insertionPoint) =>
+                    val (left, right) = vec.splitAt(insertionPoint)
+                    left ++ Vector(p) ++ right
+
+    def findInt(p: Int) = findPoint(Interval(p, p))
+    def findPoint(p: Interval) =
+        vec.search(p).match {
+            case Found(foundIndex) => Option(foundIndex)
+            case _                 => None
+        }
+
+    def add(int: Interval) =
+        assert(
+          int.fst <= int.snd,
+          s"${int.fst} should be greater than ${int.snd}"
+        )
+        IntervalVec(binIns(int))
+    def +(other: (Int, Int)) = this.add(Interval(other._1, other._2))
+
+    def from(p: Int): Vector[Interval] =
+        vec.search(Interval(p, p)).match {
+            case Found(i) => vec.drop(i)
+            case InsertionPoint(insertionPoint) =>
+                vec.drop(insertionPoint)
+        }
+
+    def to(p: Int): Vector[Interval] =
+        // println(List("WTF",vec, p, vec.search(Interval(p, p))))
+        vec.search(Interval(p, p)).match {
+            case Found(i) => vec.take(i + 1)
+            case InsertionPoint(insertionPoint) =>
+                vec.take(insertionPoint)
+        }
+
+}
+case class LineStruct(
+    val up: Vector[IntervalVec],
+    val down: Vector[IntervalVec],
+    val left: Vector[IntervalVec],
+    val right: Vector[IntervalVec]
+) {
+    override def toString(): String =
+        s"""
+        LineStruct:
+            -up : ${up}
+            -down : ${down}
+            -right : ${right}
+            -left : ${left}
+        """
+    def addLine(line: Line): LineStruct =
+        line.dir match {
+            case Direction.Up =>
+                LineStruct(
+                  up.updated(
+                    line.pointA.y,
+                    up(line.pointA.y) + (line.pointA.x, line.pointB.x)
+                  ),
+                  down,
+                  left,
+                  right
+                )
+            case Direction.Down =>
+                LineStruct(
+                  up,
+                  down.updated(
+                    line.pointA.y,
+                    down(line.pointA.y) + (line.pointA.x, line.pointB.x)
+                  ),
+                  left,
+                  right
+                )
+            case Direction.Right =>
+                LineStruct(
+                  up,
+                  down,
+                  left,
+                  right.updated(
+                    line.pointA.x,
+                    right(line.pointB.x) + (line.pointA.y, line.pointB.y)
+                  )
+                )
+            case Direction.Left =>
+                LineStruct(
+                  up,
+                  down,
+                  left.updated(
+                    line.pointA.x,
+                    left(line.pointA.x) + (line.pointA.y, line.pointB.y)
+                  ),
+                  right
+                )
+        }
+
+    def |+|(line: Line) = this.addLine(line)
+
+    def addObstacle(
+        vec: Vector[IntervalVec],
+        inverseDir: Boolean
+    )(ind: Int, el: Int) =
+        vec(ind)
+            .findInt(el)
+            .match
+                case Some(int) => {
+                    val Interval(a, b) = vec(ind).vec(int)
+                    val t = vec.updated(
+                      ind,
+                      IntervalVec(vec(ind).vec.patch(int, None, 1))
+                    )
+                    val ret =
+                        if inverseDir && el > a + 1 then
+                            t.updated(ind, t(ind).add(Interval(a, el - 1)))
+                        else if !inverseDir && el < b - 1 then
+                            t.updated(ind, t(ind).add(Interval(el + 1, b)))
+                        else t
+                    Some(ret)
+                }
+                case None => None
+
+    def insertObs(obs: MapIndex): Option[LineStruct] =
+        var count = 0
+        val newUp = {
+            addObstacle(up, false)(obs.y, obs.x).match
+                case Some(u) => {
+                    count += 1
+                    u
+                }
+                case None => up
+        }
+        val newDown = {
+            addObstacle(down, true)(obs.y, obs.x).match
+                case Some(u) => {
+                    count += 1
+                    u
+                }
+                case None => down
+        }
+
+        val newLeft = {
+            addObstacle(left, false)(obs.x, obs.y).match
+                case Some(u) => {
+                    count += 1
+                    u
+                }
+                case None => left
+        }
+
+        val newRight = {
+            addObstacle(right, true)(obs.x, obs.y).match
+                case Some(u) => {
+                    count += 1
+                    u
+                }
+                case None => right
+        }
+        if count > 1 then {
+            None
+        } else {
+            Option(
+              LineStruct(
+                up = newUp,
+                down = newDown,
+                right = newRight,
+                left = newLeft
+              )
+            )
+        }
+
+    def getClosest(point: MapIndex, dir: Direction): Option[Int] =
+        dir.match
+            case Direction.Up => up(point.y).from(point.x).headOption.map(_.fst)
+            case Direction.Down =>
+                down(point.y).to(point.x).lastOption.map(_.snd)
+            case partB.Direction.Left =>
+                left(point.x).from(point.y).headOption.map(_.fst)
+            case partB.Direction.Right =>
+                right(point.x).to(point.y).lastOption.map(_.snd)
+
+}
+
+object LineStruct {
+    def createStruct = LineStruct(
+      up = Vector.fill(MapDims.getCols)(IntervalVec(Vector.empty)),
+      down = Vector.fill(MapDims.getCols)(IntervalVec(Vector.empty)),
+      left = Vector.fill(MapDims.getRows)(IntervalVec(Vector.empty)),
+      right = Vector.fill(MapDims.getRows)(IntervalVec(Vector.empty))
+    )
+}
+
+def log[A](x: A) =
+    println(x)
+    x
+
 @tailrec
-def addElems(lines: List[Line], count: Int = 0): Int =
-    lines match
+def checkPoint(grid: GridStruct, lineStruct: LineStruct, dir: Direction)(
+    p: MapIndex
+): Boolean =
+    val gridPoint = grid.getClosest(p, dir)
+    val linePoint = lineStruct.getClosest(p, dir)
+    val minPoint =
+        if (dir == Direction.Up || dir == Direction.Left) then 1 else -1
+    println(List(p, dir, gridPoint, linePoint))
+    (gridPoint, linePoint, dir) match
+        case (None, None, _) => false // Out of bounds
+        case (b, Some(a), d) if b == None || (b.get - a) * minPoint >= 0 =>
+            true // Getting into a different path
+        case (a, b, c) => {
+            // println(List(a, b, c, lineStruct))
+            val pObs = a.get
+            val newDir = dir.turn
+            val endPoint =
+                if dir == Direction.Up || dir == Direction.Down then {
+                    MapIndex(pObs, p.y)
+                } else {
+                    MapIndex(p.x, pObs)
+                }
+            val newLine = if (endPoint != p) {
+                lineStruct |+| Line.createLine(p, endPoint).get
+            } else lineStruct
+            checkPoint(grid, newLine, newDir)(endPoint)
+        }
+
+def findPoints(grid: GridStruct, lineStruct: LineStruct, line: Line): Int =
+    val points = if line.isHorizontal then {
+        (line.pointA.y + 1 `until` line.pointB.y)
+            .map(MapIndex(line.pointA.x, _))
+
+    } else {
+        (line.pointA.x + 1 `until` line.pointB.x)
+            .map(MapIndex(_, line.pointA.y))
+    }
+    val ps = points
+        .filter(x => {
+            fixGrids(grid, lineStruct, x + line.dir) match {
+                case None => false
+                case Some(lineADT, grid) =>
+                    checkPoint(grid, lineADT, line.dir.turn)(x)
+            }
+
+        })
+        .toList
+    // println(ps)
+    ps.length
+
+@tailrec
+def part2Loop(
+    grid: GridStruct,
+    lineStruct: LineStruct = LineStruct.createStruct
+)(
+    root: List[Line],
+    count: Int = 0
+): Int =
+    root match
         case Nil => count
-        case head :: next =>
-            addElems(next, count + next.filter(head <&> _).length)
+        case head :: next => {
+            val newStruct = lineStruct |+| head
+            part2Loop(grid, newStruct)(
+              next,
+              findPoints(grid, newStruct, head) + count
+            )
+        }
+
+def fixGrids(grid: GridStruct, lineADT: LineStruct, obs: MapIndex) =
+    val newGrid = grid + obs
+    lineADT.insertObs(obs).map((_, newGrid))
 
 def part2(ins: Instance): Unit =
     var currentPosition: Option[MapIndex] = Some(ins.player)
@@ -252,7 +559,7 @@ def part2(ins: Instance): Unit =
             )
             .get
 
-    println(res.size)
+    println(part2Loop(ins.map)(lines))
 
 @main def main(fileName: String) =
     val ins = readFile(fileName)
