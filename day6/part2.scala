@@ -83,8 +83,8 @@ object MapDims {
         dir.match
             case Direction.Up    => MapIndex(getRows - 1, mapIndex.y)
             case Direction.Down  => MapIndex(0, mapIndex.y)
-            case Direction.Left  => MapIndex(mapIndex.x, 0)
-            case Direction.Right => MapIndex(mapIndex.x, getCols - 1)
+            case Direction.Left  => MapIndex(mapIndex.x, getCols - 1)
+            case Direction.Right => MapIndex(mapIndex.x, 0)
 
     def convertIndex(ind: Int): MapIndex =
         val cols = getCols
@@ -93,7 +93,8 @@ object MapDims {
 
 class GridStruct(
     val rowMap: Vector[TreeSet[Int]],
-    val colMap: Vector[TreeSet[Int]]
+    val colMap: Vector[TreeSet[Int]],
+    val startPos: MapIndex
 ) {
     def getClosest(indx: MapIndex, direction: Direction): Option[Int] =
         direction match {
@@ -149,14 +150,16 @@ class GridStruct(
     def +(other: MapIndex): GridStruct =
         GridStruct(
           rowMap.updated(other.x, rowMap(other.x) + other.y),
-          colMap.updated(other.y, colMap(other.y) + other.x)
+          colMap.updated(other.y, colMap(other.y) + other.x),
+          startPos
         )
 }
 
 object GridStruct {
-    def init = GridStruct(
+    def init(startPos: MapIndex) = GridStruct(
       rowMap = Vector.fill(MapDims.getRows)(TreeSet.empty),
-      colMap = Vector.fill(MapDims.getCols)(TreeSet.empty)
+      colMap = Vector.fill(MapDims.getCols)(TreeSet.empty),
+      startPos = startPos
     )
 }
 
@@ -181,7 +184,7 @@ def readFile(fileName: String): Instance =
     val gridStruct = map.zipWithIndex
         .filter(_._1 == CellType.Wall)
         .map(MapDims.convertIndex compose (_._2))
-        .foldLeft(GridStruct.init)(_ + _)
+        .foldLeft(GridStruct.init(explorerIndex._2))(_ + _)
     Instance(gridStruct, explorerIndex._2, explorerDir)
 
 extension [A](seq: Seq[A])
@@ -385,7 +388,7 @@ case class LineStruct(
                     val t = vec.updated(
                       ind,
                       IntervalVec(vec(ind).vec.patch(int, None, 1))
-                    )
+                    ) // Remove
                     val ret =
                         if inverseDir && el > a + 1 then
                             t.updated(ind, t(ind).add(Interval(a, el - 1)))
@@ -447,7 +450,11 @@ case class LineStruct(
 
     def getClosest(point: MapIndex, dir: Direction): Option[Int] =
         dir.match
-            case Direction.Up => up(point.y).from(point.x).headOption.map(_.fst)
+            case Direction.Up =>
+                up(point.y)
+                    .from(point.x)
+                    .headOption
+                    .map((_.fst))
             case Direction.Down =>
                 down(point.y).to(point.x).lastOption.map(_.snd)
             case partB.Direction.Left =>
@@ -478,12 +485,12 @@ def checkPoint(grid: GridStruct, lineStruct: LineStruct, dir: Direction)(
     val linePoint = lineStruct.getClosest(p, dir)
     val minPoint =
         if (dir == Direction.Up || dir == Direction.Left) then 1 else -1
-    println(List(p, dir, gridPoint, linePoint))
-    (gridPoint, linePoint, dir) match
-        case (None, None, _) => false // Out of bounds
-        case (b, Some(a), d) if b == None || (b.get - a) * minPoint >= 0 =>
+    // println(List(p, dir, gridPoint, linePoint))
+    (gridPoint, linePoint) match
+        case (None, None) => false // Out of bounds
+        case (b, Some(a)) if b == None || (b.get - a) * minPoint > 0 =>
             true // Getting into a different path
-        case (a, b, c) => {
+        case (a, b) => {
             // println(List(a, b, c, lineStruct))
             val pObs = a.get
             val newDir = dir.turn
@@ -493,6 +500,7 @@ def checkPoint(grid: GridStruct, lineStruct: LineStruct, dir: Direction)(
                 } else {
                     MapIndex(p.x, pObs)
                 }
+            // println(List(p, endPoint))
             val newLine = if (endPoint != p) {
                 lineStruct |+| Line.createLine(p, endPoint).get
             } else lineStruct
@@ -500,20 +508,24 @@ def checkPoint(grid: GridStruct, lineStruct: LineStruct, dir: Direction)(
         }
 
 def findPoints(grid: GridStruct, lineStruct: LineStruct, line: Line): Int =
-    val points = if line.isHorizontal then {
-        (line.pointA.y + 1 `until` line.pointB.y)
-            .map(MapIndex(line.pointA.x, _))
-
-    } else {
-        (line.pointA.x + 1 `until` line.pointB.x)
-            .map(MapIndex(_, line.pointA.y))
-    }
+    val points = line.toPoints
     val ps = points
+        .filter(x =>
+            val p = x + line.dir
+            (0 `until` MapDims.getCols)
+                .contains(p.y) &&
+            (0 `until` MapDims.getRows).contains(p.x)
+            && !grid.colMap(p.y).contains(p.x)
+            && grid.startPos != p
+        ) // If it already exists
         .filter(x => {
+            // print(s"===For Line ${line}==")
             fixGrids(grid, lineStruct, x + line.dir) match {
-                case None => false
+                case None                => false
                 case Some(lineADT, grid) =>
+                    // log(
                     checkPoint(grid, lineADT, line.dir.turn)(x)
+                // )
             }
 
         })
@@ -546,6 +558,7 @@ def fixGrids(grid: GridStruct, lineADT: LineStruct, obs: MapIndex) =
 def part2(ins: Instance): Unit =
     var currentPosition: Option[MapIndex] = Some(ins.player)
     val result = loop(ins.map)(ins.player, ins.dir).toList
+    // println(result)
     var lines =
         result
             .zip(result.tail)
@@ -558,7 +571,6 @@ def part2(ins: Instance): Unit =
                 }
             )
             .get
-
     println(part2Loop(ins.map)(lines))
 
 @main def main(fileName: String) =
@@ -566,7 +578,6 @@ def part2(ins: Instance): Unit =
     part2(ins)
 
 /* Reachable lines
-1. Must admit the <&> case
-2. No # in between the lines
-2. No other line in between the line
+1. Inclusion checks on intersectins
+
  */
