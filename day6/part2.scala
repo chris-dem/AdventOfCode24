@@ -7,6 +7,8 @@ import scala.collection.Searching._
 import scala.annotation.tailrec
 import java.beans.Introspector
 import java.time.Year
+import partB.MapDims.getCols
+import partB.MapDims.getRows
 
 type Wall = Unit
 type Grid = Vector[CellType]
@@ -543,11 +545,17 @@ def part2Loop(
 ): Int =
     root match
         case Nil => count
+        // case head :: Nil => {
+        //     part2Loop(grid, lineStruct)(
+        //       Nil,
+        //       findPoints(grid, lineStruct, head) + count
+        //     )
+        // }
         case head :: next => {
             val newStruct = lineStruct |+| head
             part2Loop(grid, newStruct)(
               next,
-              findPoints(grid, newStruct, head) + count
+              findPoints(grid, lineStruct, head) + count
             )
         }
 
@@ -571,13 +579,10 @@ def part2(ins: Instance): Unit =
                 }
             )
             .get
+
     println(part2Loop(ins.map)(lines))
 
 @main def main(fileName: String) =
     val ins = readFile(fileName)
     part2(ins)
 
-/* Reachable lines
-1. Inclusion checks on intersectins
-
- */
