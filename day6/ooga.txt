@@ -1,3 +1,4 @@
+1303 incorrect
 1577 incorrect
 1619 incorrect (prob close tho just missing some edge cases)
 1750 incorrect
