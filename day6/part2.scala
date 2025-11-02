@@ -102,22 +102,22 @@ class GridStruct(
         direction match {
             case Direction.Up =>
                 colMap(indx.y)
-                    .from(indx.x)
+                    .rangeFrom(indx.x)
                     .headOption
                     .map(_ - 1)
             case Direction.Down =>
                 colMap(indx.y)
-                    .to(indx.x)
+                    .rangeTo(indx.x)
                     .lastOption
                     .map(_ + 1)
             case Direction.Right =>
                 rowMap(indx.x)
-                    .to(indx.y)
+                    .rangeTo(indx.y)
                     .lastOption
                     .map(_ + 1)
             case Direction.Left =>
                 rowMap(indx.x)
-                    .from(indx.y)
+                    .rangeFrom(indx.y)
                     .headOption
                     .map(_ - 1)
         }
@@ -125,25 +125,25 @@ class GridStruct(
         direction match {
             case Direction.Up =>
                 colMap(indx.y)
-                    .from(indx.x)
+                    .rangeFrom(indx.x)
                     .headOption
                     .map(MapIndex(_, indx.y))
                     .map(_ + MapIndex(-1, 0))
             case Direction.Down =>
                 colMap(indx.y)
-                    .to(indx.x)
+                    .rangeTo(indx.x)
                     .lastOption
                     .map(MapIndex(_, indx.y))
                     .map(_ + MapIndex(1, 0))
             case Direction.Right =>
                 rowMap(indx.x)
-                    .to(indx.y)
+                    .rangeTo(indx.y)
                     .lastOption
                     .map(MapIndex(indx.x, _))
                     .map(_ + MapIndex(0, 1))
             case Direction.Left =>
                 rowMap(indx.x)
-                    .from(indx.y)
+                    .rangeFrom(indx.y)
                     .headOption
                     .map(MapIndex(indx.x, _))
                     .map(_ + MapIndex(0, -1))
@@ -216,8 +216,8 @@ case class Line(pointA: MapIndex, pointB: MapIndex, dir: Direction) {
 
     def toPoints: Iterator[MapIndex] =
         if isHorizontal then
-            (pointA.y to pointB.y).map(MapIndex(pointA.x, _)).toIterator
-        else (pointA.x to pointB.x).map(MapIndex(_, pointA.y)).toIterator
+            (pointA.y to pointB.y).map(MapIndex(pointA.x, _)).iterator
+        else (pointA.x to pointB.x).map(MapIndex(_, pointA.y)).iterator
 
     def isHorizontal = dir == Direction.Right || dir == Direction.Left
     def <&>(other: Line): Boolean =
@@ -378,77 +378,12 @@ case class LineStruct(
 
     def |+|(line: Line) = this.addLine(line)
 
-    def addObstacle(
-        vec: Vector[IntervalVec],
-        inverseDir: Boolean
-    )(ind: Int, el: Int) =
-        vec(ind)
-            .findInt(el)
-            .match
-                case Some(int) => {
-                    val Interval(a, b) = vec(ind).vec(int)
-                    val t = vec.updated(
-                      ind,
-                      IntervalVec(vec(ind).vec.patch(int, None, 1))
-                    ) // Remove
-                    val ret =
-                        if inverseDir && el > a + 1 then
-                            t.updated(ind, t(ind).add(Interval(a, el - 1)))
-                        else if !inverseDir && el < b - 1 then
-                            t.updated(ind, t(ind).add(Interval(el + 1, b)))
-                        else t
-                    Some(ret)
-                }
-                case None => None
-
-    def insertObs(obs: MapIndex): Option[LineStruct] =
-        var count = 0
-        val newUp = {
-            addObstacle(up, false)(obs.y, obs.x).match
-                case Some(u) => {
-                    count += 1
-                    u
-                }
-                case None => up
-        }
-        val newDown = {
-            addObstacle(down, true)(obs.y, obs.x).match
-                case Some(u) => {
-                    count += 1
-                    u
-                }
-                case None => down
-        }
-
-        val newLeft = {
-            addObstacle(left, false)(obs.x, obs.y).match
-                case Some(u) => {
-                    count += 1
-                    u
-                }
-                case None => left
-        }
-
-        val newRight = {
-            addObstacle(right, true)(obs.x, obs.y).match
-                case Some(u) => {
-                    count += 1
-                    u
-                }
-                case None => right
-        }
-        if count > 1 then {
-            None
-        } else {
-            Option(
-              LineStruct(
-                up = newUp,
-                down = newDown,
-                right = newRight,
-                left = newLeft
-              )
-            )
-        }
+    def contains(point: MapIndex): Boolean = {
+        this.up(point.y).findInt(point.x).isDefined &&
+        this.down(point.y).findInt(point.x).isDefined &&
+        this.left(point.x).findInt(point.y).isDefined &&
+        this.right(point.x).findInt(point.y).isDefined
+    }
 
     def getClosest(point: MapIndex, dir: Direction): Option[Int] =
         dir.match
@@ -518,19 +453,12 @@ def findPoints(grid: GridStruct, lineStruct: LineStruct, line: Line): Int =
                 .contains(p.y) &&
             (0 `until` MapDims.getRows).contains(p.x)
             && !grid.colMap(p.y).contains(p.x)
+            && !lineStruct.contains(p)
             && grid.startPos != p
         ) // If it already exists
-        .filter(x => {
-            // print(s"===For Line ${line}==")
-            fixGrids(grid, lineStruct, x + line.dir) match {
-                case None                => false
-                case Some(lineADT, grid) =>
-                    // log(
-                    checkPoint(grid, lineADT, line.dir.turn)(x)
-                // )
-            }
-
-        })
+        .filter(
+          checkPoint(grid, lineStruct, line.dir.turn) `compose` (_ + line.dir)
+        )
         .toList
     // println(ps)
     ps.length
@@ -545,23 +473,16 @@ def part2Loop(
 ): Int =
     root match
         case Nil => count
-        // case head :: Nil => {
-        //     part2Loop(grid, lineStruct)(
-        //       Nil,
-        //       findPoints(grid, lineStruct, head) + count
-        //     )
-        // }
-        case head :: next => {
-            val newStruct = lineStruct |+| head
-            part2Loop(grid, newStruct)(
+        case head :: next =>
+            part2Loop(grid, lineStruct |+| head)(
               next,
               findPoints(grid, lineStruct, head) + count
             )
-        }
 
 def fixGrids(grid: GridStruct, lineADT: LineStruct, obs: MapIndex) =
     val newGrid = grid + obs
-    lineADT.insertObs(obs).map((_, newGrid))
+    println()
+    // lineADT.insertObs(obs).map((_, newGrid))
 
 def part2(ins: Instance): Unit =
     var currentPosition: Option[MapIndex] = Some(ins.player)
@@ -585,4 +506,3 @@ def part2(ins: Instance): Unit =
 @main def main(fileName: String) =
     val ins = readFile(fileName)
     part2(ins)
-
