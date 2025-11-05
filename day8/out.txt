@@ -1,0 +1,4 @@
+Map(CellType(A) -> Vector(MapIndex(5,6), MapIndex(8,8), MapIndex(9,9)), CellType(0) -> Vector(MapIndex(1,8), MapIndex(2,5), MapIndex(3,7), MapIndex(4,4)))
+TreeSet(MapIndex(1,3), MapIndex(2,4), MapIndex(7,7), MapIndex(10,10), MapIndex(11,10))
+TreeSet(MapIndex(0,6), MapIndex(0,11), MapIndex(1,3), MapIndex(2,10), MapIndex(3,2), MapIndex(4,9), MapIndex(5,1), MapIndex(5,6), MapIndex(6,3), MapIndex(7,0))
+14
